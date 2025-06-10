@@ -44,6 +44,7 @@ import deepspeed
 from transformers import AutoConfig
 from torch.utils.data import Dataset
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IMAGE_TOKEN_INDEX
+from llava.bev_utils import bev_tokens
 from llava.train.llava_trainer import LLaVATrainer
 
 from llava import conversation as conversation_lib
@@ -141,6 +142,7 @@ class DataArguments:
     frames_upbound: Optional[int] = field(default=0)
     add_time_instruction: Optional[bool] = field(default=False)
     force_sample: Optional[bool] = field(default=False)
+    add_bev_tokens: Optional[bool] = field(default=False, metadata={"help": "Add BEV action tokens for trajectory classification"})
 
 
 @dataclass
@@ -1877,6 +1879,12 @@ def train(attn_implementation=None):
                 tokenizer=tokenizer,
                 model=model,
             )
+    if data_args.add_bev_tokens:
+        smart_tokenizer_and_embedding_resize(
+            special_tokens_dict={"additional_special_tokens": bev_tokens()},
+            tokenizer=tokenizer,
+            model=model,
+        )
     elif model_args.version == "v0.5":
         tokenizer.pad_token = tokenizer.unk_token
     else:

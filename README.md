@@ -127,10 +127,23 @@ Stage 3 Script:
 
 ## Finetune from LLaDA-V
 ```bash
-Script: 
+Script:
    cd train && bash scripts/llada_v_finetune.sh
    note: you need to add the path of "data_path", "image_folder", "video_folder" in llada_v_finetune.sh.
 ```
+
+## BEV Trajectory Tokens
+
+To enable vehicle trajectory prediction with grid classification, you can
+activate the new token set representing BEV coordinates. When launching
+`train/train.py`, pass `--add_bev_tokens` to expand the vocabulary with 13,200
+special tokens in the form `<bev_{x}_{y}>`. The BEV grid covers:
+
+- **X axis**: five ranges `[-40,-20,2]`, `[-20,0,1]`, `[0,20,0.5]`, `[20,40,1]`, `[40,80,2]`.
+- **Y axis**: single range `[-60,60,1]`.
+
+These tokens can be used to represent 8 successive trajectory points by outputting
+a sequence of grid tokens.
 
 
 ## Evaluation
