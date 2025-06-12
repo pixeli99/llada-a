@@ -44,7 +44,7 @@ import deepspeed
 from transformers import AutoConfig
 from torch.utils.data import Dataset
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IMAGE_TOKEN_INDEX
-from llava.bev_utils import bev_tokens
+from llava.bev_utils import bev_tokens, coord_to_token
 from llava.train.llava_trainer import LLaVATrainer
 
 from llava import conversation as conversation_lib
@@ -387,6 +387,71 @@ def _add_speaker_and_signal(header, source, get_conversation=True):
     return conversation
 
 
+def process_bev_coordinates(text: str) -> str:
+    """
+    Process BEV coordinates in text and convert them to BEV tokens.
+    
+    Expected input formats:
+    - Single coordinate: "(x, y)" -> "<bev_xi_yi>"
+    - Trajectory (8 points): "[(x1,y1), (x2,y2), ..., (x8,y8)]" -> "<bev_x1_y1> <bev_x2_y2> ... <bev_x8_y8>"
+    - Mixed text with coordinates
+    
+    Args:
+        text (str): Input text containing BEV coordinates
+        
+    Returns:
+        str: Text with coordinates converted to BEV tokens
+    """
+    import ast
+    
+    # Pattern for trajectory format: [(x1,y1), (x2,y2), ...]
+    trajectory_pattern = r'\[\s*\(\s*[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+\s*\)(?:\s*,\s*\(\s*[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+\s*\))*\s*\]'
+    
+    # Pattern for single coordinate: (x, y)
+    coordinate_pattern = r'\(\s*[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+\s*\)'
+    
+    def replace_trajectory(match):
+        """Replace trajectory list with BEV tokens."""
+        try:
+            trajectory_str = match.group(0)
+            # Parse the trajectory string
+            trajectory = ast.literal_eval(trajectory_str)
+            
+            # Convert each coordinate to BEV token
+            bev_tokens_list = []
+            for x, y in trajectory:
+                bev_token = coord_to_token(float(x), float(y))
+                bev_tokens_list.append(bev_token)
+            
+            return " ".join(bev_tokens_list)
+        except (ValueError, SyntaxError) as e:
+            # If parsing fails, return original text
+            rank0_print(f"Warning: Failed to parse trajectory {match.group(0)}: {e}")
+            return match.group(0)
+    
+    def replace_coordinate(match):
+        """Replace single coordinate with BEV token."""
+        try:
+            coord_str = match.group(0)
+            # Extract x, y from (x, y)
+            coord_str = coord_str.strip('()')
+            x, y = map(float, coord_str.split(','))
+            
+            return coord_to_token(x, y)
+        except ValueError as e:
+            # If parsing fails, return original text
+            rank0_print(f"Warning: Failed to parse coordinate {match.group(0)}: {e}")
+            return match.group(0)
+    
+    # First replace trajectory patterns
+    text = re.sub(trajectory_pattern, replace_trajectory, text)
+    
+    # Then replace remaining single coordinate patterns
+    text = re.sub(coordinate_pattern, replace_coordinate, text)
+    
+    return text
+
+
 def preprocess_multimodal(sources: Sequence[str], data_args: DataArguments) -> Dict:
     is_multimodal = data_args.is_multimodal
     if not is_multimodal:
@@ -394,6 +459,10 @@ def preprocess_multimodal(sources: Sequence[str], data_args: DataArguments) -> D
 
     for source in sources:
         for sentence in source:
+            # Process BEV coordinates if add_bev_tokens is enabled
+            if data_args.add_bev_tokens:
+                sentence["value"] = process_bev_coordinates(sentence["value"])
+            
             # TODO maybe this should be changed for interleaved data?
             # if DEFAULT_IMAGE_TOKEN in sentence["value"] and not sentence["value"].startswith(DEFAULT_IMAGE_TOKEN):
             # only check for num_im=1
@@ -1872,16 +1941,21 @@ def train(attn_implementation=None):
         raise ValueError(f"Unknown tokenizer")
 
     rank0_print(f"Prompt version: {model_args.version}")
+    
+    # Collect all special tokens to add at once for efficiency
+    special_tokens_to_add = {}
+    
     if model_args.version == "v0":
         if tokenizer.pad_token is None:
-            smart_tokenizer_and_embedding_resize(
-                special_tokens_dict=dict(pad_token="[PAD]"),
-                tokenizer=tokenizer,
-                model=model,
-            )
+            special_tokens_to_add["pad_token"] = "[PAD]"
+    
     if data_args.add_bev_tokens:
+        special_tokens_to_add["additional_special_tokens"] = bev_tokens()
+    
+    # Add all special tokens in a single call if any need to be added
+    if special_tokens_to_add:
         smart_tokenizer_and_embedding_resize(
-            special_tokens_dict={"additional_special_tokens": bev_tokens()},
+            special_tokens_dict=special_tokens_to_add,
             tokenizer=tokenizer,
             model=model,
         )
