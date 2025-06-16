@@ -851,7 +851,7 @@ def preprocess_llada(
     tokenizer: transformers.PreTrainedTokenizer,
     has_image: bool = False,
     max_len=2048,
-    system_message: str = "You are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.",
+    system_message: str = "As an experienced driver, you are operating a vehicle and have access to a real-time continuous view of the left, front and right from your first-person perspective.",
 ) -> Dict:
     # roles = {"human": "<|start_header_id|>user<|end_header_id|>", "gpt": "<|start_header_id|>assistant<|end_header_id|>"}
     roles = {"human": "user", "gpt": "assistant"}
