@@ -1,0 +1,4 @@
+train/exp/
+train/model/
+train/data/
+.vscode

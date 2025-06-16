@@ -142,7 +142,8 @@ class DataArguments:
     frames_upbound: Optional[int] = field(default=0)
     add_time_instruction: Optional[bool] = field(default=False)
     force_sample: Optional[bool] = field(default=False)
-    add_bev_tokens: Optional[bool] = field(default=False, metadata={"help": "Add BEV action tokens for trajectory classification"})
+    add_bev_tokens: Optional[bool] = field(default=True, metadata={"help": "Add BEV action tokens for trajectory classification"})
+    freeze_old_embeddings: Optional[bool] = field(default=True, metadata={"help": "Only train new BEV tokens, freeze pre-trained embeddings"})
 
 
 @dataclass
@@ -332,6 +333,48 @@ def smart_tokenizer_and_embedding_resize(
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+    return num_new_tokens
+
+
+def freeze_embedding_except_new_tokens(model, num_new_tokens):
+    """
+    Freeze all embedding parameters except for the newly added tokens.
+    This allows only the new BEV tokens to be trained while keeping
+    the pre-trained embeddings frozen.
+    
+    Args:
+        model: The model containing embeddings
+        num_new_tokens: Number of newly added tokens
+    """
+    if num_new_tokens <= 0:
+        return
+    
+    # Get embedding layers
+    input_embeddings = model.get_input_embeddings()
+    output_embeddings = model.get_output_embeddings()
+    
+    # First freeze all embedding parameters
+    input_embeddings.weight.requires_grad_(True)
+    # output_embeddings.weight.requires_grad_(False)
+    
+    # Then enable gradients only for the new tokens
+    # The new tokens are at the end: [-num_new_tokens:]
+    input_embeddings.weight.register_hook(
+        lambda grad: torch.cat([
+            torch.zeros_like(grad[:-num_new_tokens]),  # Zero gradients for old tokens
+            grad[-num_new_tokens:]  # Keep gradients for new tokens
+        ], dim=0)
+    )
+    
+    # output_embeddings.weight.register_hook(
+    #     lambda grad: torch.cat([
+    #         torch.zeros_like(grad[:-num_new_tokens]),  # Zero gradients for old tokens  
+    #         grad[-num_new_tokens:]  # Keep gradients for new tokens
+    #     ], dim=0)
+    # )
+       
+    rank0_print(f"Frozen embedding parameters except for {num_new_tokens} new tokens")
 
 
 def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
@@ -1953,8 +1996,9 @@ def train(attn_implementation=None):
         special_tokens_to_add["additional_special_tokens"] = bev_tokens()
     
     # Add all special tokens in a single call if any need to be added
+    num_new_tokens = 0
     if special_tokens_to_add:
-        smart_tokenizer_and_embedding_resize(
+        num_new_tokens = smart_tokenizer_and_embedding_resize(
             special_tokens_dict=special_tokens_to_add,
             tokenizer=tokenizer,
             model=model,
@@ -2063,7 +2107,9 @@ def train(attn_implementation=None):
                 for name, param in model.named_parameters():
                     if "vision_tower" not in name and "mm_projector" not in name and "vision_resampler" not in name:
                         param.requires_grad_(True)
-
+        # If BEV tokens were added and freeze_old_embeddings is enabled, freeze embedding except for new tokens
+        if data_args.add_bev_tokens and data_args.freeze_old_embeddings and num_new_tokens > 0:
+            freeze_embedding_except_new_tokens(model, num_new_tokens)
         total_params = sum(p.ds_numel if hasattr(p, "ds_numel") else p.numel() for p in model.parameters())
         trainable_params = sum(p.ds_numel if hasattr(p, "ds_numel") else p.numel() for p in model.parameters() if p.requires_grad)
         rank0_print(f"Total parameters: ~{total_params/1e6:.2f} MB)")
