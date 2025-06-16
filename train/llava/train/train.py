@@ -356,7 +356,7 @@ def freeze_embedding_except_new_tokens(model, num_new_tokens):
     
     # First freeze all embedding parameters
     input_embeddings.weight.requires_grad_(True)
-    # output_embeddings.weight.requires_grad_(False)
+    output_embeddings.weight.requires_grad_(True)
     
     # Then enable gradients only for the new tokens
     # The new tokens are at the end: [-num_new_tokens:]
@@ -366,13 +366,6 @@ def freeze_embedding_except_new_tokens(model, num_new_tokens):
             grad[-num_new_tokens:]  # Keep gradients for new tokens
         ], dim=0)
     )
-    
-    # output_embeddings.weight.register_hook(
-    #     lambda grad: torch.cat([
-    #         torch.zeros_like(grad[:-num_new_tokens]),  # Zero gradients for old tokens  
-    #         grad[-num_new_tokens:]  # Keep gradients for new tokens
-    #     ], dim=0)
-    # )
        
     rank0_print(f"Frozen embedding parameters except for {num_new_tokens} new tokens")
 
