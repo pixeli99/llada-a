@@ -14,7 +14,7 @@ import copy
 import torch
 import time
 
-from llava.bev_utils import decode_bev_tokens  # BEV token → (x, y)
+from llava.bev_utils import decode_bev_tokens  # BEV token pair → (x, y)
 
 import sys
 import warnings
@@ -76,10 +76,10 @@ print(f"Generation time: {generation_time:.4f} seconds")
 
 print(cont)
 
-# Raw decode (may still contain <bev_x_y> tokens)
+# Raw decode (may still contain <bev_idx> tokens)
 text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=False)
 
-# Human‑readable: convert every BEV token to its (x, y) coordinate
+# Human-readable: convert BEV token pairs to (x, y) coordinates
 decoded_outputs = [decode_bev_tokens(txt) for txt in text_outputs]
 
 print("=== Raw model output ===")

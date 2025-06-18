@@ -428,8 +428,10 @@ def process_bev_coordinates(text: str) -> str:
     Process BEV coordinates in text and convert them to BEV tokens.
     
     Expected input formats:
-    - Single coordinate: "(x, y)" -> "<bev_xi_yi>"
-    - Trajectory (8 points): "[(x1,y1), (x2,y2), ..., (x8,y8)]" -> "<bev_x1_y1> <bev_x2_y2> ... <bev_x8_y8>"
+    - Single coordinate: "(x, y)" → "<bev_x_idx> <bev_y_idx>"
+      (two tokens, *x* followed by *y*)
+    - Trajectory (8 points): "[(x1,y1), (x2,y2), ..., (x8,y8)]" →
+      "<bev_x1_idx> <bev_y1_idx> <bev_x2_idx> <bev_y2_idx> ..."
     - Mixed text with coordinates
     
     Args:
