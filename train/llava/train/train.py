@@ -144,6 +144,8 @@ class DataArguments:
     force_sample: Optional[bool] = field(default=False)
     add_bev_tokens: Optional[bool] = field(default=True, metadata={"help": "Add BEV action tokens for trajectory classification"})
     freeze_old_embeddings: Optional[bool] = field(default=True, metadata={"help": "Only train new BEV tokens, freeze pre-trained embeddings"})
+    # === LiAuto online loading ===
+    liauto_online: bool = field(default=False, metadata={"help": "Treat data_path as LiAuto dataset config JSON and stream samples online (three-camera images, BEV trajectory)"})
 
 
 @dataclass
@@ -1690,20 +1692,30 @@ class DataCollatorForSupervisedDataset(object):
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args, training_args) -> Dict:
     """Create dataset and collator for supervised fine-tuning."""
-    # Check if using WebDataset format
-    if getattr(data_args, "use_webdataset", False) or data_args.data_path.endswith(".tar"):
+    # 1) LiAuto online streaming
+    if getattr(data_args, "liauto_online", False):
+        rank0_print("Loading LiAuto dataset in online mode")
+        from liauto.liauto_online_dataset import LiAutoOnlineSupervisedDataset  # local import to avoid circular
+        train_dataset = LiAutoOnlineSupervisedDataset(
+            cfg_path=data_args.data_path,
+            tokenizer=tokenizer,
+            data_args=data_args,
+        )
+    # 2) WebDataset tar shards
+    elif getattr(data_args, "use_webdataset", False) or data_args.data_path.endswith(".tar"):
         rank0_print("Loading data using WebDataset format")
         train_dataset = WebDatasetSupervisedDataset(
-            tokenizer=tokenizer, 
+            tokenizer=tokenizer,
             data_path=data_args.data_path,
-            data_args=data_args
+            data_args=data_args,
         )
+    # 3) Standard JSON list / JSONL
     else:
         rank0_print("Loading data using traditional JSON format")
         train_dataset = LazySupervisedDataset(
-            tokenizer=tokenizer, 
+            tokenizer=tokenizer,
             data_path=data_args.data_path,
-            data_args=data_args
+            data_args=data_args,
         )
     
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, training_args=training_args)
