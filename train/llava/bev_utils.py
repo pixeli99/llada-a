@@ -69,18 +69,18 @@ def token_to_coord(token):
         raise IndexError(f"BEV index out of range in token {token}")
     return float(x_bins[xi]), float(y_bins[yi])
 
-def decode_bev_tokens(text):
+def decode_bev_tokens(text: str) -> list[tuple[float, float]]:
     """
-    Replace every BEV token in *text* with its decoded ``(x, y)`` string
-    representation, keeping other text intact.
-
-    Example
-    -------
-    >>> decode_bev_tokens('Car at <bev_12_7> approaching <bev_15_7>')
-    'Car at (x=??, y=??) approaching (x=??, y=??)'
+    Extract all BEV tokens from *text* and decode them to (x, y) coordinates.
+    If no BEV tokens are found, return an empty list [].
+    This function does not return the modified string, only extracts the
+    coordinates for consistent handling by higher layers.
     """
-    def _sub(match):
-        x, y = token_to_coord(match.group(0))
-        return f"(x={x:.2f}, y={y:.2f})"
-
-    return _BEV_REGEX.sub(_sub, text)
+    coords: list[tuple[float, float]] = []
+    for m in _BEV_REGEX.finditer(text):
+        xi, yi = map(int, m.groups())
+        # 越界保护
+        if xi >= len(x_bins) or yi >= len(y_bins):
+            raise IndexError(f"BEV index out of range: <bev_{xi}_{yi}>")
+        coords.append( (float(x_bins[xi]), float(y_bins[yi])) )
+    return coords
