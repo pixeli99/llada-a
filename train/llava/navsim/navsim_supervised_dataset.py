@@ -82,6 +82,47 @@ class NavsimSupervisedDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.sample_rel)
 
+    # ------------------------------------------------------------------
+    # Optional helpers required by LLaVA Trainer for smart batching
+    # ------------------------------------------------------------------
+    @property
+    def lengths(self) -> List[int]:
+        """Rough sequence length (in *words*) for each sample.
+
+        The LLaVA trainer uses this to create length-balanced batches when
+        ``--group_by_length`` or related flags are enabled.  Exact token counts
+        are not required – an approximate positive number is sufficient as the
+        sampler only needs a *relative* measure.  Computing the *exact* token
+        length here would require loading each gzip cache file, which is
+        unnecessarily slow at dataset initialisation time.  Instead we return
+        a fixed heuristic length for every sample.
+        """
+
+        # Cache so we only build the list once.
+        if not hasattr(self, "_lengths"):
+            # All NavSim samples are multimodal (images + text).  A reasonable
+            # upper-bound for the prompt (~120 words) plus special/image tokens
+            # is ~256, so we simply use that constant for every element.
+            self._lengths = [256] * len(self)
+        return self._lengths
+
+    @property
+    def modality_lengths(self) -> List[int]:
+        """Same as ``lengths`` but with sign indicating modality.
+
+        Positive values denote multimodal samples (which NavSim always is),
+        while negative values would denote language-only samples.  The trainer
+        uses the sign to separate language-only and multimodal batches when
+        ``--group_by_modality_length`` or ``--group_by_modality_length_auto``
+        flags are enabled.
+        """
+
+        # Since every NavSim example contains images, we simply reuse the
+        # positive length list from :pyattr:`lengths`.
+        if not hasattr(self, "_modality_lengths"):
+            self._modality_lengths = self.lengths  # already all positive
+        return self._modality_lengths
+
     def __getitem__(self, idx):
         preprocess_multimodal, preprocess = _lazy_import_preprocs()
 
