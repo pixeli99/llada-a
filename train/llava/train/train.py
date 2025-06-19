@@ -147,6 +147,10 @@ class DataArguments:
     # === LiAuto online loading ===
     liauto_online: bool = field(default=False, metadata={"help": "Treat data_path as LiAuto dataset config JSON and stream samples online (three-camera images, BEV trajectory)"})
 
+    # === NavSim new dataset ===
+    dataset_format: str = field(default="json", metadata={"help": "Dataset format: json | webdataset | liauto_online | navsim"})
+    navsim_cache_root: Optional[str] = field(default=None, metadata={"help": "Root directory for NavSim gz cache folders"})
+
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -1707,6 +1711,19 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
         train_dataset = WebDatasetSupervisedDataset(
             tokenizer=tokenizer,
             data_path=data_args.data_path,
+            data_args=data_args,
+        )
+    # 3) NavSim cache dataset
+    elif getattr(data_args, "dataset_format", "json") == "navsim":
+        rank0_print("Loading data using NavSim cache dataset")
+        from train.navsim.navsim_supervised_dataset import NavsimSupervisedDataset
+
+        assert data_args.navsim_cache_root is not None, "--navsim_cache_root must be provided for NavSim dataset"
+
+        train_dataset = NavsimSupervisedDataset(
+            json_path=data_args.data_path,
+            cache_root=data_args.navsim_cache_root,
+            tokenizer=tokenizer,
             data_args=data_args,
         )
     # 3) Standard JSON list / JSONL
