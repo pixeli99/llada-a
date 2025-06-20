@@ -150,6 +150,8 @@ class DataArguments:
     # === NavSim new dataset ===
     dataset_format: str = field(default="json", metadata={"help": "Dataset format: json | webdataset | liauto_online | navsim"})
     navsim_cache_root: Optional[str] = field(default=None, metadata={"help": "Root directory for NavSim gz cache folders"})
+    # Whether to include past trajectory (history) information in NavSim prompt construction
+    include_past_trajectory: bool = field(default=False, metadata={"help": "If true, include feat['past_trajectory'] in the user prompt for NavSim dataset"})
 
 
 @dataclass
@@ -1716,7 +1718,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     # 3) NavSim cache dataset
     elif getattr(data_args, "dataset_format", "json") == "navsim":
         rank0_print("Loading data using NavSim cache dataset")
-        from train.navsim.navsim_supervised_dataset import NavsimSupervisedDataset
+        from llava.navsim.navsim_supervised_dataset import NavsimSupervisedDataset
 
         assert data_args.navsim_cache_root is not None, "--navsim_cache_root must be provided for NavSim dataset"
 
@@ -2163,6 +2165,25 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, training_args=training_args)
+    # Visualise one training sample for sanity-check (rank 0 only)
+    if training_args.local_rank in (-1, 0):
+        try:
+            example = data_module["train_dataset"][0]
+            rank0_print("\n================ Sample Example ================")
+            if "image" in example and len(example["image"]) > 0:
+                try:
+                    import os, torchvision.utils as vutils
+                    img_tensor = example["image"][0][0]  # get tensor
+                    if img_tensor.dim() == 4:  # video tensor F,C,H,W -> take first frame
+                        img_tensor = img_tensor[0]
+                    os.makedirs(training_args.output_dir, exist_ok=True)
+                    sample_img_path = os.path.join(training_args.output_dir, "sample_visual.png")
+                    vutils.save_image(img_tensor, sample_img_path, normalize=True)
+                    rank0_print(f"Sample image saved to {sample_img_path}")
+                except Exception as e:
+                    rank0_print(f"[Visualise] Failed to save image: {e}")
+        except Exception as e:
+            rank0_print(f"[Visualise] Unable to fetch/print sample: {e}")
     setattr(training_args, "use_webdataset", getattr(data_args, "use_webdataset"))
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
 

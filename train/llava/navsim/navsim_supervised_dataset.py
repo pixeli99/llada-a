@@ -153,7 +153,20 @@ class NavsimSupervisedDataset(torch.utils.data.Dataset):
         )
 
         image_tokens = "\n".join([DEFAULT_IMAGE_TOKEN] * len(meta_images))
-        human_text = f"{image_tokens}\n{prompt_user}"
+
+        # Optionally append historical (past) trajectory information ------------------------------------
+        if getattr(self.data_args, "include_past_trajectory", False):
+            past_traj = feat.get("past_trajectory")
+            if past_traj is not None:
+                past_traj = past_traj[:, :2].tolist()  # keep x,y only
+                past_traj_str = str([(round(x, 2), round(y, 2)) for x, y in past_traj])
+                extra_hist = f" The past trajectory of the vehicle is: {past_traj_str}."
+            else:
+                extra_hist = ""
+        else:
+            extra_hist = ""
+
+        human_text = f"{image_tokens}\n{prompt_user}{extra_hist}"
 
         # Future trajectory to string
         traj = tgt["trajectory"][:, :2].tolist()
